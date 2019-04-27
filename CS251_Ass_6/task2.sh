@@ -15,11 +15,11 @@ testcases=""
 
 # Checking if the user entered a valid c-source file as one of the argument
 # If yes then store it in cfile variable
-if file $1 | grep -Ei ".*:.*c.*program.*text|.*:.*C.*source.*text" > /dev/null
+if file $1 | grep -Ei ".*:.*c.*program.*text|.*:.*C.*SOURCE.*" > /dev/null
 then
 	cfile=$1
 	testcases=$2
-elif file $2 | grep -Ei ".*:.*c.*program.*text|.*:.*C.*source.*text" > /dev/null
+elif file $2 | grep -Ei ".*:.*c.*program.*text|.*:.*C.*SOURCE.*" > /dev/null
 then
 	cfile=$2
 	testcases=$1
@@ -39,14 +39,18 @@ fi
 
 
 # In case the c-file is in some other directory
-# To ensure that .gcda .gcno are in the same file as c-source file 
-cp $cfile ./myfile.c
+# To ensure that everything is in one directory
+cp $cfile ./task2.c
 
 # Creating Hidden-log files
-touch .compilation.log .gcov.log .output.log
+touch .compilation.log .output.log funcTime.csv
+touch timePerTestCase.csv timeNet.csv
 
-# Compiler c file ensuring proper optimizations as required by gcov
-gcc -fprofile-arcs -ftest-coverage myfile.c -o task1 2> .compilation.log
+echo "testcase,Time,Func" > timePerTestCase.csv
+echo "testcase,Time,Func" > timeNet.csv
+
+# Compiler c file ensuring proper optimizations as required by gprof
+gcc -pg -o task2 task2.c 2> .compilation.log
 
 # To handle Errors thrown out by gcc
 if [ $? != 0 ]
@@ -55,19 +59,29 @@ then
 	exit
 fi
 
+#Temporary variable to solve problem of first gmon.sum made
+flag=0
+i=0
 # Execute file again and again for all the testcases to get a net output over all test cases in .c.gcov file.
 while IFS= read -r testcase || [[ -n "$testcase" ]]; do
-	./task1 $testcase >> .output.log 
-	gcov -b myfile.c >> .gcov.log
+	./task2 $testcase >> .output.log 
+	((i++))
+	gprof -b -p task2 gmon.out | tr -s " " | awk -v t="$i" '{if(NR>5) print t","$3","$7}' >> timePerTestCase.csv
+
+	# To create the first gmon.sum file
+	if [[ $flag == 0 ]] 
+	then
+		gprof -b -s task2 gmon.out
+		cp gmon.out gmon.sum
+		flag=1
+	else
+		# Profiling and summarising output
+		gprof -b -s task2 gmon.out gmon.sum
+	fi
+
 done < "$testcases"
 
-# Grep the line_number and execution frequency and put then in a csv file.
-# Also grepping the not-executed lines and changed their count from ## to 0
-grep -Eo "^[ ]*[0-9]+:[ ]*[0-9]+:|^[ ]*[#]+:[ ]*[0-9]+:" myfile.c.gcov | tr ":" " " | awk '{if($1 == "#####") $1=0; print $2","$1;}' > execution_frequency.csv
-
-# Grep the BIAS of branch 0 (averaged over all test cases)
-grep -E -B 1 "^[ ]*branch[ ]*0[ ]*taken[ ]*[0-9]*%" myfile.c.gcov | awk '{if(NR%3 == 1) print $2; if(NR%3 == 2) print $4;}' | awk 'NR%2{printf $0;next;}1'| tr -d "%" | tr ":" "," > branch0_bias.csv
-
+gprof -b -p task2 gmon.sum | tr -s " " | awk -v t="$i" '{if(NR>5) print t","$3","$7}' >> timeNet.csv
 
 
 

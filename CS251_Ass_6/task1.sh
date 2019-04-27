@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 
@@ -55,18 +56,30 @@ then
 	exit
 fi
 
+touch branch0_bias.csv
+echo "test,line,bias" > branch0_bias.csv
+
+i=0
 # Execute file again and again for all the testcases to get a net output over all test cases in .c.gcov file.
 while IFS= read -r testcase || [[ -n "$testcase" ]]; do
+    let i=i+1
 	./task1 $testcase >> .output.log 
 	gcov -b myfile.c >> .gcov.log
+    # Grep the BIAS of branch 0 
+    grep -E -B 1 "^[ ]*branch[ ]*0[ ]*taken[ ]*[0-9]*%" myfile.c.gcov | awk '{if(NR%3 == 1) print $2; if(NR%3 == 2) print $4;}' | awk 'NR%2{printf $0;next;}1'| tr -d "%" | tr ":" ","| awk -v t="$i" '{print t","$1 }'>> branch0_bias.csv
+    rm myfile.gcda myfile.c.gcov
 done < "$testcases"
 
-# Grep the line_number and execution frequency and put then in a csv file.
-# Also grepping the not-executed lines and changed their count from ## to 0
-grep -Eo "^[ ]*[0-9]+:[ ]*[0-9]+:|^[ ]*[#]+:[ ]*[0-9]+:" myfile.c.gcov | tr ":" " " | awk '{if($1 == "#####") $1=0; print $2","$1;}' > execution_frequency.csv
+touch RTask1.R 
 
-# Grep the BIAS of branch 0 (averaged over all test cases)
-grep -E -B 1 "^[ ]*branch[ ]*0[ ]*taken[ ]*[0-9]*%" myfile.c.gcov | awk '{if(NR%3 == 1) print $2; if(NR%3 == 2) print $4;}' | awk 'NR%2{printf $0;next;}1'| tr -d "%" | tr ":" "," > branch0_bias.csv
+echo "data = read.csv('branch0_bias.csv')
+library(ggplot2)
+ggplot(data, aes(x=line,y=bias,color=factor(test))) + geom_line() + geom_point() + facet_wrap(~test) 
+ggplot(data, aes(x=line,y=bias,fill=factor(test))) + geom_bar(stat='identity') + facet_wrap(~test)
+" > RTask1.R
+
+Rscript RTask1.R 
+
 
 
 
